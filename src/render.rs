@@ -14,9 +14,9 @@ const RESET_CURSOR: &[u8] = b"\x1b[H";
 const CURSOR_DOWN: &[u8] = b"\x1b[B";
 const CLEAR_SCREEN: &[u8] = b"\x1b[2J";
 
-const TO_TYPE: &[u8] = b"\x1b[0;37m\x1b[3m";
+const TO_TYPE: &[u8] = b"\x1b[3;37m";
 const CORRECT: &[u8] = b"\x1b[1;97m";
-const MISTAKE: &[u8] = b"\x1b[0;31m";
+const MISTAKE: &[u8] = b"\x1b[37;48;5;52m";
 const RESET_COLOR: &[u8] = b"\x1b[0m";
 
 fn move_cursor_to_col(col: usize) -> Vec<u8> {
@@ -103,6 +103,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             buf.extend(move_cursor_to_col(self.top_left.0));
             buf.extend(CURSOR_DOWN);
         }
+        buf.extend(RESET_COLOR);
         buf.extend(move_cursor_to(
             self.top_left.0 + self.cursor.0,
             self.top_left.1 + self.cursor.1,
@@ -128,6 +129,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
                 buf.extend(MISTAKE);
             }
             buf.extend(ch.to_string().as_bytes());
+            buf.extend(RESET_COLOR);
             self.cursor.0 += 1;
         }
 
