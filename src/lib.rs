@@ -1,13 +1,13 @@
-#![allow(unused)]
 #![feature(iter_intersperse)]
 
-use std::{self, io, time};
+use std::{self, io, sync};
 
 use crossterm::{event, execute, terminal};
 use lazy_static::lazy_static;
 use rand;
 
 mod input;
+mod race;
 mod render;
 
 static WORD_FILE: &str = include_str!("../words.txt");
@@ -26,7 +26,7 @@ pub fn exit() {
     terminal::disable_raw_mode().unwrap();
 }
 
-pub fn char_iter_from_to_type(to_type: &[&str]) -> impl Iterator<Item = char> {
+fn char_iter_from_to_type(to_type: &[&str]) -> impl Iterator<Item = char> {
     to_type
         .iter()
         .intersperse_with(|| &" ")
@@ -37,43 +37,38 @@ pub fn char_iter_from_to_type(to_type: &[&str]) -> impl Iterator<Item = char> {
 pub fn run() {
     let mut to_type = vec![];
 
-    while to_type.len() < 50 {
-        let random = rand::random_range(0..WORDS.len());
-        to_type.push(WORDS[random]);
-    }
+    let (input_chan, run) = input::spawn_input_thread();
 
-    let mut renderer = render::Renderer::new(&to_type);
-    renderer.render_full("");
+    'outer: loop {
+        to_type.clear();
+        for _ in 0..30 {
+            let random = rand::random_range(0..WORDS.len());
+            to_type.push(WORDS[random]);
+        }
 
-    let input_chan = input::spawn_input_thread();
+        let result = match race::run_race(&to_type, &input_chan) {
+            Ok(r) => r,
+            Err(race::RaceError::Aborted) => break 'outer,
+            Err(race::RaceError::Restart) => continue,
+        };
 
-    let mut iter = input_chan.iter();
-    let Some(e) = iter.next() else {
-        return;
-    };
-    let mut typed = String::new();
-    let mut start = time::Instant::now();
+        render::menu::render_menu(result);
 
-    for event in std::iter::once(e).chain(iter) {
-        match event {
-            event::Event::Key(event::KeyEvent {
-                code: event::KeyCode::Esc,
-                ..
-            }) => break,
-            event::Event::Resize(w, h) => {
-                renderer.resize(w.into(), h.into());
-                renderer.render_full(&typed);
+        for e in input_chan.iter() {
+            match e {
+                event::Event::Key(event::KeyEvent {
+                    code: event::KeyCode::Enter,
+                    ..
+                }) => break,
+                event::Event::Key(event::KeyEvent {
+                    code: event::KeyCode::Esc,
+                    ..
+                }) => break 'outer,
+                _ => (),
             }
-            event::Event::Key(event::KeyEvent {
-                code: event::KeyCode::Char(c),
-                ..
-            }) => {
-                typed.push(c);
-                renderer.render_char_typed(c);
-            }
-            _ => (),
         }
     }
+    run.store(false, sync::atomic::Ordering::Relaxed);
 }
 
 #[cfg(test)]
