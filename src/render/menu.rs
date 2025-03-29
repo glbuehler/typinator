@@ -16,7 +16,7 @@ pub fn render_menu(race_result: race::RaceInfo) {
             race_result.duration.as_secs_f32(),
             race_result.mistakes,
             race_result.words as f32 / (race_result.duration.as_secs_f32() / 60.0),
-            1.0 - (race_result.mistakes as f32 / race_result.characters as f32),
+            100.0 * (1.0 - (race_result.mistakes as f32 / race_result.characters as f32)),
         )
         .as_bytes(),
     );
