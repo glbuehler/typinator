@@ -51,6 +51,7 @@ pub fn run() {
             Err(race::RaceError::Aborted) => break 'outer,
             Err(race::RaceError::Restart) => continue,
         };
+        std::thread::sleep(std::time::Duration::from_millis(500));
 
         render::menu::render_menu(result);
 
