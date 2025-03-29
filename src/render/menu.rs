@@ -11,7 +11,7 @@ pub fn render_menu(race_result: race::RaceInfo) {
 
     buf.extend(
         format!(
-            "Words typed:\t{}\r\nLetters typed:\t{}\r\nMistakes:\t{}\r\nTime:\t\t{:.2}\r\nWPM:\t\t{:.2}\r\nAccuracy:\t{:.2}%",
+            "Words typed:\t{}\r\nLetters typed:\t{}\r\nMistakes:\t{}\r\nTime:\t\t{:.2}s\r\nWPM:\t\t{:.2}\r\nAccuracy:\t{:.2}%",
             race_result.words,
             race_result.characters,
             race_result.mistakes,
