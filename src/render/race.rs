@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    time,
+};
 
 use crossterm::terminal;
 
@@ -14,8 +17,9 @@ pub struct Renderer<'a, 'b: 'a> {
     line_lens: Vec<usize>,
     line_words: Vec<usize>,
 
-    top_left: (usize, usize),
     size: (usize, usize),
+    text_field_top_left: (usize, usize),
+    text_field_size: (usize, usize),
 }
 
 impl<'a, 'b: 'a> Renderer<'a, 'b> {
@@ -26,8 +30,9 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             line_lens: vec![],
             line_words: vec![],
 
-            top_left: (0, 0),
             size: (0, 0),
+            text_field_top_left: (0, 0),
+            text_field_size: (0, 0),
         };
         let Ok((w, h)) = terminal::size() else {
             panic!("cannot get terminal size");
@@ -37,6 +42,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
     }
 
     pub fn resize(&mut self, w: usize, h: usize) {
+        self.size = (w, h);
         let mut typed_len = self
             .line_lens
             .iter()
@@ -45,11 +51,14 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             .sum::<usize>()
             + self.cursor.0;
 
-        self.size = (
+        self.text_field_size = (
             (w as f32 * TEXT_FIELD_RATIO.0) as usize,
             (h as f32 * TEXT_FIELD_RATIO.1) as usize,
         );
-        self.top_left = (w / 2 - self.size.0 / 2, h / 2 - self.size.1 / 2);
+        self.text_field_top_left = (
+            w / 2 - self.text_field_size.0 / 2,
+            h / 2 - self.text_field_size.1 / 2,
+        );
 
         let mut iter = self.to_type.iter();
         self.line_lens.clear();
@@ -62,7 +71,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         for w in iter {
             let l = w.chars().count();
             let len = self.line_lens.last_mut().unwrap();
-            if *len + l + 1 >= self.size.0 {
+            if *len + l + 1 >= self.text_field_size.0 {
                 self.line_lens.push(l);
                 self.line_words.push(1);
             } else {
@@ -85,7 +94,10 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
     pub fn render_full(&self, typed: &str) {
         let mut buf = vec![];
         buf.extend(CLEAR_SCREEN);
-        buf.extend(move_cursor_to(self.top_left.0, self.top_left.1));
+        buf.extend(move_cursor_to(
+            self.text_field_top_left.0,
+            self.text_field_top_left.1,
+        ));
         buf.extend(SHOW_CURSOR);
         buf.extend(DISABLE_CURSOR_BLINK);
         buf.extend(THIN_CURSOR);
@@ -106,12 +118,12 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             typed_iter.next(); // space at end of line
             i += l;
 
-            buf.extend(move_cursor_to_col(self.top_left.0));
+            buf.extend(move_cursor_to_col(self.text_field_top_left.0));
             buf.extend(CURSOR_DOWN);
         }
         buf.extend(move_cursor_to(
-            self.top_left.0 + self.cursor.0,
-            self.top_left.1 + self.cursor.1,
+            self.text_field_top_left.0 + self.cursor.0,
+            self.text_field_top_left.1 + self.cursor.1,
         ));
 
         io::stdout().write_all(&buf).unwrap();
@@ -139,8 +151,24 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         }
 
         buf.extend(move_cursor_to(
-            self.top_left.0 + self.cursor.0,
-            self.top_left.1 + self.cursor.1,
+            self.text_field_top_left.0 + self.cursor.0,
+            self.text_field_top_left.1 + self.cursor.1,
+        ));
+
+        io::stdout().write_all(&buf).unwrap();
+        io::stdout().flush().unwrap();
+    }
+
+    pub fn render_time(&self, time: time::Duration) {
+        let mut buf = vec![];
+        let time_str = format!("{:.2}", time.as_secs_f32());
+        let l = time_str.chars().count();
+
+        buf.extend(move_cursor_to((self.size.0 - l) / 2, 1));
+        buf.extend(time_str.as_bytes());
+        buf.extend(move_cursor_to(
+            self.text_field_top_left.0 + self.cursor.0,
+            self.text_field_top_left.1 + self.cursor.1,
         ));
 
         io::stdout().write_all(&buf).unwrap();
@@ -160,9 +188,4 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             .flatten()
             .nth(self.cursor.0)
     }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
 }

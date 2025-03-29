@@ -1,6 +1,7 @@
 use typinator::*;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     enter();
 
     let hook = std::panic::take_hook();
@@ -9,7 +10,7 @@ fn main() {
         hook(info);
     }));
 
-    run();
+    run().await;
 
     exit();
 }

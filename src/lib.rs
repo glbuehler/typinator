@@ -1,12 +1,12 @@
 #![feature(iter_intersperse)]
 
-use std::{self, io, sync};
+use std::{self, io, time};
 
 use crossterm::{event, execute, terminal};
+use futures::{StreamExt, future::FutureExt, select};
 use lazy_static::lazy_static;
 use rand;
 
-mod input;
 mod race;
 mod render;
 
@@ -22,7 +22,12 @@ pub fn enter() {
 }
 
 pub fn exit() {
-    execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
+    execute!(
+        io::stdout(),
+        terminal::LeaveAlternateScreen,
+        crossterm::cursor::Show
+    )
+    .unwrap();
     terminal::disable_raw_mode().unwrap();
 }
 
@@ -34,42 +39,44 @@ fn char_iter_from_to_type(to_type: &[&str]) -> impl Iterator<Item = char> {
         .flatten()
 }
 
-pub fn run() {
+pub async fn run() {
     let mut to_type = vec![];
-
-    let (input_chan, run) = input::spawn_input_thread();
+    let mut reader = event::EventStream::new();
 
     'outer: loop {
         to_type.clear();
         for _ in 0..30 {
-            let random = rand::random_range(0..WORDS.len());
-            to_type.push(WORDS[random]);
+            let rnd = rand::random_range(0..WORDS.len());
+            to_type.push(WORDS[rnd]);
         }
 
-        let result = match race::run_race(&to_type, &input_chan) {
-            Ok(r) => r,
-            Err(race::RaceError::Aborted) => break 'outer,
+        let info = match race::run_race(&to_type).await {
+            Ok(info) => info,
+            Err(race::RaceError::Aborted) => break,
             Err(race::RaceError::Restart) => continue,
         };
-        std::thread::sleep(std::time::Duration::from_millis(500));
 
-        render::menu::render_menu(result);
+        futures_timer::Delay::new(time::Duration::from_millis(500)).await;
+        render::menu::render_menu(info);
 
-        for e in input_chan.iter() {
-            match e {
-                event::Event::Key(event::KeyEvent {
-                    code: event::KeyCode::Enter,
-                    ..
-                }) => break,
-                event::Event::Key(event::KeyEvent {
-                    code: event::KeyCode::Esc,
-                    ..
-                }) => break 'outer,
-                _ => (),
+        loop {
+            let mut next = reader.next().fuse();
+            select! {
+                e = next => { match e {
+                        Some(Ok(event::Event::Key(event::KeyEvent {
+                            code: event::KeyCode::Esc,
+                            ..
+                        }))) => break 'outer,
+                        Some(Ok(event::Event::Key(event::KeyEvent {
+                            code: event::KeyCode::Enter,
+                            ..
+                        }))) => break,
+                        _ => (),
+                    }
+                }
             }
         }
     }
-    run.store(false, sync::atomic::Ordering::Relaxed);
 }
 
 #[cfg(test)]

@@ -1,69 +1,79 @@
 use crate::render::race::*;
 
 use crossterm::event;
+use futures::{FutureExt, StreamExt, select};
+use futures_timer::Delay;
 
-use std::{sync::mpsc, time};
+use std::time;
 
 pub enum RaceError {
     Aborted,
     Restart,
 }
 
-pub fn run_race(
-    to_type: &[&str],
-    input_chan: &mpsc::Receiver<event::Event>,
-) -> Result<RaceInfo, RaceError> {
-    let mut renderer = Renderer::new(&to_type);
+pub async fn run_race(to_type: &[&str]) -> Result<RaceInfo, RaceError> {
+    let mut renderer = Renderer::new(to_type);
     renderer.render_full("");
+    renderer.render_time(time::Duration::ZERO);
 
     let mut start = None;
     let mut typed = String::new();
     let mut char_iter = crate::char_iter_from_to_type(&to_type);
-    let mut mistakes = 0;
     let mut next_char = char_iter.next().unwrap();
+    let mut mistakes = 0;
 
-    for event in input_chan.iter() {
-        match event {
-            event::Event::Key(event::KeyEvent {
-                code: event::KeyCode::Esc,
-                ..
-            }) => return Err(RaceError::Aborted),
-            event::Event::Resize(w, h) => {
-                renderer.resize(w.into(), h.into());
-                renderer.render_full(&typed);
-            }
-            event::Event::Key(event::KeyEvent {
-                code: event::KeyCode::Char('r'),
-                modifiers: event::KeyModifiers::CONTROL,
-                ..
-            }) => return Err(RaceError::Restart),
-            event::Event::Key(event::KeyEvent {
-                code: event::KeyCode::Char(c),
-                modifiers: event::KeyModifiers::NONE | event::KeyModifiers::SHIFT,
-                ..
-            }) => {
-                if start.is_none() {
-                    start = Some(time::Instant::now());
-                }
-                typed.push(c);
-                renderer.render_char_typed(c);
-                mistakes += if c != next_char { 1 } else { 0 };
-                match char_iter.next() {
-                    Some(ch) => next_char = ch,
-                    None => {
-                        return Ok(RaceInfo {
-                            words: to_type.len(),
-                            characters: typed.len(),
-                            duration: time::Instant::now() - start.unwrap(),
-                            mistakes,
-                        });
+    let mut stream = crossterm::event::EventStream::new();
+    let mut delay = Delay::new(time::Duration::from_millis(50)).fuse();
+
+    loop {
+        let mut next = stream.next().fuse();
+        select! {
+            _ = delay => {
+                renderer.render_time(start.map(|s| time::Instant::now() - s).unwrap_or(time::Duration::ZERO));
+                delay = Delay::new(time::Duration::from_millis(50)).fuse();
+            },
+            e = next => { match e {
+                    Some(Ok(event::Event::Resize(w, h))) => {
+                        renderer.resize(w.into(), h.into());
+                        renderer.render_full(&typed);
+                        renderer.render_time(start.map(|s| time::Instant::now() - s).unwrap_or(time::Duration::ZERO));
                     }
-                }
-            }
-            _ => (),
+                    Some(Ok(event::Event::Key(event::KeyEvent {
+                        code: event::KeyCode::Esc,
+                        ..
+                    }))) => return Err(RaceError::Aborted),
+                    Some(Ok(event::Event::Key(event::KeyEvent {
+                        code: event::KeyCode::Char('r'),
+                        modifiers: event::KeyModifiers::CONTROL,
+                        ..
+                    }))) => return Err(RaceError::Restart),
+                    Some(Ok(event::Event::Key(event::KeyEvent {
+                        code: event::KeyCode::Char(c),
+                        modifiers: event::KeyModifiers::NONE | event::KeyModifiers::SHIFT,
+                        ..
+                    }))) => {
+                        if start.is_none() {
+                            start = Some(time::Instant::now());
+                        }
+                        renderer.render_char_typed(c);
+                        typed.push(c);
+                        mistakes += if c == next_char { 0 } else { 1 };
+                        match char_iter.next() {
+                            Some(c) => next_char = c,
+                            None => return Ok(RaceInfo {
+                                words: to_type.len(),
+                                characters: typed.len(),
+                                duration: time::Instant::now() - start.unwrap(),
+                                mistakes,
+                            }),
+                        }
+                    },
+                    Some(Err(e)) => { dbg!(e); },
+                    _ => (),
+                };
+            },
         }
     }
-    unreachable!()
 }
 
 pub struct RaceInfo {
