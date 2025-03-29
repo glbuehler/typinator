@@ -20,6 +20,7 @@ pub fn run_race(
     let mut typed = String::new();
     let mut char_iter = crate::char_iter_from_to_type(&to_type);
     let mut mistakes = 0;
+    let mut next_char = char_iter.next().unwrap();
 
     for event in input_chan.iter() {
         match event {
@@ -46,8 +47,9 @@ pub fn run_race(
                 }
                 typed.push(c);
                 renderer.render_char_typed(c);
+                mistakes += if c != next_char { 1 } else { 0 };
                 match char_iter.next() {
-                    Some(ch) => mistakes += if c != ch { 1 } else { 0 },
+                    Some(ch) => next_char = ch,
                     None => {
                         return Ok(RaceInfo {
                             words: to_type.len(),
