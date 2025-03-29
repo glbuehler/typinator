@@ -11,10 +11,11 @@ pub fn render_menu(race_result: race::RaceInfo) {
 
     buf.extend(
         format!(
-            "Words typed:\t{}\r\nTime:\t\t{:.2}\r\nMistakes:\t{}\r\nWPM:\t\t{:.2}\r\nAccuracy:\t{:.2}%",
+            "Words typed:\t{}\r\nLetters typed:\t{}\r\nMistakes:\t{}\r\nTime:\t\t{:.2}\r\nWPM:\t\t{:.2}\r\nAccuracy:\t{:.2}%",
             race_result.words,
-            race_result.duration.as_secs_f32(),
+            race_result.characters,
             race_result.mistakes,
+            race_result.duration.as_secs_f32(),
             race_result.words as f32 / (race_result.duration.as_secs_f32() / 60.0),
             100.0 * (1.0 - (race_result.mistakes as f32 / race_result.characters as f32)),
         )
