@@ -37,6 +37,14 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
     }
 
     pub fn resize(&mut self, w: usize, h: usize) {
+        let mut typed_len = self
+            .line_lens
+            .iter()
+            .take(self.cursor.1)
+            .map(|l| l + 1) // one space at end
+            .sum::<usize>()
+            + self.cursor.0;
+
         self.size = (
             (w as f32 * TEXT_FIELD_RATIO.0) as usize,
             (h as f32 * TEXT_FIELD_RATIO.1) as usize,
@@ -62,6 +70,16 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
                 *self.line_words.last_mut().unwrap() += 1;
             }
         }
+
+        self.cursor = (0, 0);
+        for l in self.line_lens.iter() {
+            if typed_len < *l {
+                break;
+            }
+            typed_len -= l + 1; // one space at end
+            self.cursor.1 += 1;
+        }
+        self.cursor.0 = typed_len;
     }
 
     pub fn render_full(&self, typed: &str) {
@@ -73,20 +91,24 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         buf.extend(THIN_CURSOR);
         buf.extend(TO_TYPE);
 
-        let mut iter = self.to_type.iter();
+        let mut i = 0;
+        let mut typed_iter = typed.chars();
         for l in self.line_words.iter() {
-            for _ in 0..*l {
-                let Some(next) = iter.next() else {
-                    panic!("invalid line word length");
-                };
-                buf.extend(next.as_bytes());
-                buf.push(b' ');
+            for c in crate::char_iter_from_to_type(&self.to_type[i..i + *l]) {
+                buf.extend(if let Some(t) = typed_iter.next() {
+                    if t == c { CORRECT } else { MISTAKE }
+                } else {
+                    TO_TYPE
+                });
+                buf.extend(c.to_string().as_bytes());
+                buf.extend(RESET_COLOR);
             }
-            buf.pop();
+            typed_iter.next(); // space at end of line
+            i += l;
+
             buf.extend(move_cursor_to_col(self.top_left.0));
             buf.extend(CURSOR_DOWN);
         }
-        buf.extend(RESET_COLOR);
         buf.extend(move_cursor_to(
             self.top_left.0 + self.cursor.0,
             self.top_left.1 + self.cursor.1,
