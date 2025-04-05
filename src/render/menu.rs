@@ -24,20 +24,31 @@ pub fn render_menu(race_result: race::RaceInfo) {
         "N/A".to_string()
     };
 
-    render_results(&[
+    let mut buf = render_results(&[
         ("Words typed", &race_result.words.to_string()),
         ("Letters typed", &race_result.characters.to_string()),
         ("Mistakes", &race_result.mistakes.to_string()),
         ("Time", &time),
         ("WPM", &wpm),
         ("Accuracy", &accuracy),
-    ])
+    ]);
+
+    let hint = "<ESC> to exit   <ENTER> to start new";
+    let (w, h) = terminal::size().unwrap();
+    buf.extend(move_cursor_to(
+        (w as usize - hint.len()) / 2,
+        h as usize - 1,
+    ));
+    buf.extend(hint.as_bytes());
+
+    io::stdout().write_all(&buf).unwrap();
+    io::stdout().flush().unwrap();
 }
 
-fn render_results(res: &[(&str, &str)]) {
+fn render_results(res: &[(&str, &str)]) -> Vec<u8> {
     let (w, h) = terminal::size().unwrap();
     let (w, h) = (w as usize, h as usize);
-    let mut row = (h - res.len()) / 2;
+    let mut row = (h - res.len()) / 3;
 
     let mut buf = vec![];
     buf.extend(CLEAR_SCREEN);
@@ -53,6 +64,5 @@ fn render_results(res: &[(&str, &str)]) {
         row += 1;
     }
 
-    io::stdout().write_all(&buf).unwrap();
-    io::stdout().flush().unwrap();
+    buf
 }
