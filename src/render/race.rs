@@ -93,7 +93,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         self.cursor.0 = typed_len;
     }
 
-    pub fn render_full(&self, typed: &str) {
+    pub fn render_full(&self, typed: &str, time: time::Duration) {
         let mut buf = vec![];
         buf.extend(CLEAR_SCREEN);
         buf.extend(SHOW_CURSOR);
@@ -101,6 +101,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         buf.extend(THIN_CURSOR);
 
         buf.extend(self.text_field_buf(typed));
+        buf.extend(self.time_buf(time));
 
         buf.extend(move_cursor_to(
             self.text_field_top_left.0 + self.cursor.0,

@@ -13,7 +13,7 @@ pub enum RaceError {
 
 pub async fn run_race(to_type: &[&str]) -> Result<RaceInfo, RaceError> {
     let mut renderer = Renderer::new(to_type);
-    renderer.render_full("");
+    renderer.render_full("", time::Duration::ZERO);
     renderer.render_time(time::Duration::ZERO);
 
     let mut start = None;
@@ -35,8 +35,11 @@ pub async fn run_race(to_type: &[&str]) -> Result<RaceInfo, RaceError> {
             e = next => { match e {
                     Some(Ok(event::Event::Resize(w, h))) => {
                         renderer.resize(w.into(), h.into());
-                        renderer.render_full(&typed);
-                        renderer.render_time(start.map(|s| time::Instant::now() - s).unwrap_or(time::Duration::ZERO));
+                        renderer.render_full(
+                            &typed,
+                            start.map(|s| time::Instant::now() - s)
+                                .unwrap_or(time::Duration::ZERO)
+                        );
                     }
                     Some(Ok(event::Event::Key(event::KeyEvent {
                         code: event::KeyCode::Esc,
