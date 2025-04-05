@@ -58,7 +58,7 @@ pub async fn run_race(to_type: &[&str]) -> Result<RaceInfo, RaceError> {
                         if start.is_none() {
                             start = Some(time::Instant::now());
                         }
-                        renderer.render_char_typed(c);
+                        renderer.render_char_typed(c, &typed);
                         typed.push(c);
                         mistakes += if c == next_char { 0 } else { 1 };
                         match char_iter.next() {

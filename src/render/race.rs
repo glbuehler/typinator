@@ -9,8 +9,12 @@ use super::*;
 
 const TO_TYPE: &[u8] = b"\x1b[3;37m";
 const CORRECT: &[u8] = b"\x1b[1;97m";
-const MISTAKE: &[u8] = b"\x1b[37;48;5;52m";
+const MISTAKE: &[u8] = b"\x1b[1;97;48;2;96;16;16m"; //  b"\x1b[37;48;5;88m";
+const TO_TYPE_SUBTLE: &[u8] = b"\x1b[3;38;5;240m";
+const CORRECT_SUBTLE: &[u8] = b"\x1b[1;38;5;242m";
+const MISTAKE_SUBTLE: &[u8] = b"\x1b[1;38;5;242;48;2;64;0;0m";
 
+#[derive(Debug)]
 pub struct Renderer<'a, 'b: 'a> {
     to_type: &'a [&'b str],
     cursor: (usize, usize),
@@ -48,7 +52,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         let mut typed_len = self
             .line_lens
             .iter()
-            .take(self.cursor.1)
+            .take(self.scroll + self.cursor.1)
             .map(|l| l + 1) // one space at end
             .sum::<usize>()
             + self.cursor.0;
@@ -87,7 +91,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             if typed_len < *l {
                 break;
             }
-            typed_len -= l + 1; // one space at end
+            typed_len = typed_len.checked_sub(l + 1).unwrap_or(0); // one space at end
             self.cursor.1 += 1;
         }
         self.cursor.0 = typed_len;
@@ -112,20 +116,34 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         io::stdout().flush().unwrap();
     }
 
-    pub fn render_char_typed(&mut self, c: char) {
+    pub fn render_char_typed(&mut self, c: char, typed: &str) {
         let mut buf = vec![];
 
-        if self.cursor.0 + 1 > *self.line_lens.get(self.cursor.1).unwrap_or(&0) {
+        if self.cursor.0 + 1
+            > *self
+                .line_lens
+                .get(self.scroll + self.cursor.1)
+                .unwrap_or(&0)
+        {
             if c != ' ' {
                 buf.extend(MISTAKE);
                 buf.push(b' ');
                 buf.extend(RESET_COLOR);
             }
             self.cursor.0 = 0;
-            self.cursor.1 += 1;
+
+            if self.cursor.1 >= self.text_field_size.1 / 2
+                && self.scroll + self.text_field_size.1 < self.line_words.len()
+            {
+                self.scroll += 1;
+                buf.extend(self.text_field_buf(typed))
+            } else {
+                self.cursor.1 += 1;
+            }
         } else {
             let Some(ch) = self.get_char_under_cursor() else {
-                panic!("cursor not over char");
+                std::thread::sleep(time::Duration::from_secs(5));
+                panic!("cursor not over char {:?}", self);
             };
             if c == ch {
                 buf.extend(CORRECT);
@@ -175,6 +193,8 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             self.text_field_top_left.1,
         ));
 
+        let at_bottom = self.scroll + self.text_field_size.1 >= self.line_words.len();
+
         let mut len_iter = self.line_lens.iter();
         let mut to_type_iter = crate::char_iter_from_to_type(self.to_type);
         let mut typed_iter = typed.chars();
@@ -187,7 +207,38 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             }
         }
 
-        for l in len_iter.take(self.text_field_size.1) {
+        if self.scroll > 0 {
+            let l = len_iter.next().expect("scroll not 0 but no lines");
+            for _ in 0..*l + 1 {
+                let Some(tt) = to_type_iter.next() else { break };
+                buf.extend(if let Some(t) = typed_iter.next() {
+                    if t == tt {
+                        CORRECT_SUBTLE
+                    } else {
+                        MISTAKE_SUBTLE
+                    }
+                } else {
+                    TO_TYPE_SUBTLE
+                });
+                buf.extend(tt.to_string().as_bytes());
+                buf.extend(RESET_COLOR);
+            }
+            buf.extend(vec![b' '; self.text_field_size.0 - l]);
+
+            buf.extend(move_cursor_to_col(self.text_field_top_left.0));
+            buf.extend(CURSOR_DOWN);
+        }
+
+        let mut take = self.text_field_size.1;
+        if self.scroll > 0 {
+            take -= 1;
+        }
+        if !at_bottom {
+            take -= 1;
+        }
+
+        while take > 0 {
+            let Some(l) = len_iter.next() else { break };
             for _ in 0..*l + 1 {
                 let Some(tt) = to_type_iter.next() else { break };
                 buf.extend(if let Some(t) = typed_iter.next() {
@@ -198,9 +249,32 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
                 buf.extend(tt.to_string().as_bytes());
                 buf.extend(RESET_COLOR);
             }
+            buf.extend(vec![b' '; self.text_field_size.0 - l]);
 
             buf.extend(move_cursor_to_col(self.text_field_top_left.0));
             buf.extend(CURSOR_DOWN);
+            take -= 1;
+        }
+
+        if !at_bottom {
+            let l = len_iter
+                .next()
+                .expect("not at bottom but no line left???!!!");
+            for _ in 0..*l + 1 {
+                let Some(tt) = to_type_iter.next() else { break };
+                buf.extend(if let Some(t) = typed_iter.next() {
+                    if t == tt {
+                        CORRECT_SUBTLE
+                    } else {
+                        MISTAKE_SUBTLE
+                    }
+                } else {
+                    TO_TYPE_SUBTLE
+                });
+                buf.extend(tt.to_string().as_bytes());
+                buf.extend(RESET_COLOR);
+            }
+            buf.extend(vec![b' '; self.text_field_size.0 - l]);
         }
 
         buf
@@ -208,15 +282,20 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
 
     fn get_char_under_cursor(&self) -> Option<char> {
         let mut iter = self.to_type.iter().cloned();
-        for w in self.line_words.iter().take(self.cursor.1) {
+        for w in self.line_words.iter().take(self.scroll + self.cursor.1) {
             for _ in 0..*w {
                 iter.next();
             }
         }
-        iter.take(*self.line_words.get(self.cursor.1).unwrap_or(&0))
-            .intersperse(" ")
-            .map(|s| s.chars())
-            .flatten()
-            .nth(self.cursor.0)
+        iter.take(
+            *self
+                .line_words
+                .get(self.scroll + self.cursor.1)
+                .unwrap_or(&0),
+        )
+        .intersperse(" ")
+        .map(|s| s.chars())
+        .flatten()
+        .nth(self.cursor.0)
     }
 }
