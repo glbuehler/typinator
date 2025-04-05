@@ -14,6 +14,8 @@ const TO_TYPE_SUBTLE: &[u8] = b"\x1b[3;38;5;240m";
 const CORRECT_SUBTLE: &[u8] = b"\x1b[1;38;5;242m";
 const MISTAKE_SUBTLE: &[u8] = b"\x1b[1;38;5;242;48;2;64;0;0m";
 
+const SCROLL_THRESHOLD: f32 = 0.5;
+
 #[derive(Debug)]
 pub struct Renderer<'a, 'b: 'a> {
     to_type: &'a [&'b str],
@@ -87,12 +89,20 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         }
 
         self.cursor = (0, 0);
+        self.scroll = 0;
         for l in self.line_lens.iter() {
-            if typed_len < *l {
+            if typed_len <= *l {
                 break;
             }
-            typed_len = typed_len.checked_sub(l + 1).unwrap_or(0); // one space at end
+            typed_len -= l + 1; // one space at end
             self.cursor.1 += 1;
+        }
+
+        let thresh = (self.text_field_size.1 as f32 * SCROLL_THRESHOLD) as usize;
+
+        if self.cursor.1 > thresh {
+            self.scroll = self.cursor.1 - thresh;
+            self.cursor.1 = thresh;
         }
         self.cursor.0 = typed_len;
     }
@@ -132,7 +142,9 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
             }
             self.cursor.0 = 0;
 
-            if self.cursor.1 >= self.text_field_size.1 / 2
+            let thresh = (self.text_field_size.1 as f32 * SCROLL_THRESHOLD) as usize;
+
+            if self.cursor.1 >= thresh
                 && self.scroll + self.text_field_size.1 < self.line_words.len()
             {
                 self.scroll += 1;
