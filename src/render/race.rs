@@ -14,6 +14,7 @@ const MISTAKE: &[u8] = b"\x1b[37;48;5;52m";
 pub struct Renderer<'a, 'b: 'a> {
     to_type: &'a [&'b str],
     cursor: (usize, usize),
+    scroll: usize,
     line_lens: Vec<usize>,
     line_words: Vec<usize>,
 
@@ -27,6 +28,7 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         let mut s = Self {
             to_type,
             cursor: (0, 0),
+            scroll: 0,
             line_lens: vec![],
             line_words: vec![],
 
@@ -94,33 +96,12 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
     pub fn render_full(&self, typed: &str) {
         let mut buf = vec![];
         buf.extend(CLEAR_SCREEN);
-        buf.extend(move_cursor_to(
-            self.text_field_top_left.0,
-            self.text_field_top_left.1,
-        ));
         buf.extend(SHOW_CURSOR);
         buf.extend(DISABLE_CURSOR_BLINK);
         buf.extend(THIN_CURSOR);
-        buf.extend(TO_TYPE);
 
-        let mut i = 0;
-        let mut typed_iter = typed.chars();
-        for l in self.line_words.iter() {
-            for c in crate::char_iter_from_to_type(&self.to_type[i..i + *l]) {
-                buf.extend(if let Some(t) = typed_iter.next() {
-                    if t == c { CORRECT } else { MISTAKE }
-                } else {
-                    TO_TYPE
-                });
-                buf.extend(c.to_string().as_bytes());
-                buf.extend(RESET_COLOR);
-            }
-            typed_iter.next(); // space at end of line
-            i += l;
+        buf.extend(self.text_field_buf(typed));
 
-            buf.extend(move_cursor_to_col(self.text_field_top_left.0));
-            buf.extend(CURSOR_DOWN);
-        }
         buf.extend(move_cursor_to(
             self.text_field_top_left.0 + self.cursor.0,
             self.text_field_top_left.1 + self.cursor.1,
@@ -165,12 +146,8 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
     }
 
     pub fn render_time(&self, time: time::Duration) {
-        let mut buf = vec![];
-        let time_str = format!("{:.2}", time.as_secs_f32());
-        let l = time_str.chars().count();
+        let mut buf = self.time_buf(time);
 
-        buf.extend(move_cursor_to((self.size.0 - l) / 2, 1));
-        buf.extend(time_str.as_bytes());
         buf.extend(move_cursor_to(
             self.text_field_top_left.0 + self.cursor.0,
             self.text_field_top_left.1 + self.cursor.1,
@@ -178,6 +155,54 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
 
         io::stdout().write_all(&buf).unwrap();
         io::stdout().flush().unwrap();
+    }
+
+    fn time_buf(&self, time: time::Duration) -> Vec<u8> {
+        let mut buf = vec![];
+        let time_str = format!("{:.2}", time.as_secs_f32());
+        let l = time_str.chars().count();
+
+        buf.extend(move_cursor_to((self.size.0 - l) / 2, 1));
+        buf.extend(time_str.as_bytes());
+        buf
+    }
+
+    fn text_field_buf(&self, typed: &str) -> Vec<u8> {
+        let mut buf = vec![];
+        buf.extend(move_cursor_to(
+            self.text_field_top_left.0,
+            self.text_field_top_left.1,
+        ));
+
+        let mut len_iter = self.line_lens.iter();
+        let mut to_type_iter = crate::char_iter_from_to_type(self.to_type);
+        let mut typed_iter = typed.chars();
+
+        for _ in 0..self.scroll {
+            let l = len_iter.next().expect("scroll greater than line number");
+            for _ in 0..*l + 1 {
+                to_type_iter.next();
+                typed_iter.next();
+            }
+        }
+
+        for l in len_iter.take(self.text_field_size.1) {
+            for _ in 0..*l + 1 {
+                let Some(tt) = to_type_iter.next() else { break };
+                buf.extend(if let Some(t) = typed_iter.next() {
+                    if t == tt { CORRECT } else { MISTAKE }
+                } else {
+                    TO_TYPE
+                });
+                buf.extend(tt.to_string().as_bytes());
+                buf.extend(RESET_COLOR);
+            }
+
+            buf.extend(move_cursor_to_col(self.text_field_top_left.0));
+            buf.extend(CURSOR_DOWN);
+        }
+
+        buf
     }
 
     fn get_char_under_cursor(&self) -> Option<char> {
