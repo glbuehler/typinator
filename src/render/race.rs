@@ -134,6 +134,11 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         let mut buf = vec![];
 
         if self.cursor.0 + 1 > *self.line_lens.get(self.cursor.1).unwrap_or(&0) {
+            if c != ' ' {
+                buf.extend(MISTAKE);
+                buf.push(b' ');
+                buf.extend(RESET_COLOR);
+            }
             self.cursor.0 = 0;
             self.cursor.1 += 1;
         } else {
