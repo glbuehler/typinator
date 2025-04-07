@@ -117,6 +117,13 @@ impl<'a, 'b: 'a> Renderer<'a, 'b> {
         buf.extend(self.text_field_buf(typed));
         buf.extend(self.time_buf(time));
 
+        let hint = "<ESC> to exit   <CTRL-r> to restart";
+        buf.extend(move_cursor_to(
+            (self.size.0 - hint.len()) / 2,
+            self.size.1 - 1,
+        ));
+        buf.extend(hint.as_bytes());
+
         buf.extend(move_cursor_to(
             self.text_field_top_left.0 + self.cursor.0,
             self.text_field_top_left.1 + self.cursor.1,
